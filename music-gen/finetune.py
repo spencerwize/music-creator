@@ -136,6 +136,10 @@ def run_finetune(
     music_dcae.requires_grad_(False)
     music_dcae.eval()
 
+    # The pipeline loads in bf16 on CUDA, so its conv/resampler weights are
+    # bf16; audio batches must match that dtype before they hit the DCAE.
+    model_dtype = next(music_dcae.parameters()).dtype
+
     dataset = ReferenceSegmentDataset(ref_paths, cfg.segment_seconds, TARGET_SAMPLE_RATE)
     loader = DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True)
 
@@ -154,7 +158,7 @@ def run_finetune(
     for epoch in range(1, epochs + 1):
         epoch_loss = 0.0
         for i, batch in enumerate(loader):
-            batch = batch.to(device)
+            batch = batch.to(device=device, dtype=model_dtype)
 
             with torch.no_grad():
                 # Encode audio to latents. Returns (latents, ...) depending on
@@ -163,8 +167,9 @@ def run_finetune(
                 latents = encoded[0] if isinstance(encoded, (tuple, list)) else encoded
 
             noise = torch.randn_like(latents)
-            # Rectified-flow timesteps in [0, 1].
-            t = torch.rand(latents.shape[0], device=device)
+            # Rectified-flow timesteps in [0, 1]. Keep them in the model dtype so
+            # the interpolation below stays bf16 and matches the transformer.
+            t = torch.rand(latents.shape[0], device=device, dtype=latents.dtype)
             t_exp = t.view(-1, *([1] * (latents.dim() - 1)))
             noisy = (1 - t_exp) * latents + t_exp * noise
             target = noise - latents  # flow-matching velocity target
