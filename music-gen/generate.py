@@ -109,18 +109,29 @@ class MusicGenerator:
         config: GenerationConfig,
         output_path: Path,
     ) -> Path:
-        """Run ACE-Step conditioned on the anchor stems and prompt."""
-        anchor_path = self._prepare_anchor(stem_paths)
-        # Match the generated length to the anchor so the stems line up.
-        duration = config.duration or self._anchor_duration(stem_paths)
+        """Run ACE-Step conditioned on the anchor stems and prompt.
+
+        If no anchor stems are given, audio2audio is disabled and ACE-Step does
+        a pure text+style generation (driven by the prompt, CLAP tags, and any
+        LoRA). Duration then comes from --duration, falling back to 60s.
+        """
+        use_anchor = bool(stem_paths)
+        if use_anchor:
+            anchor_path = self._prepare_anchor(stem_paths)
+            # Match the generated length to the anchor so the stems line up.
+            duration = config.duration or self._anchor_duration(stem_paths)
+        else:
+            anchor_path = None
+            duration = config.duration or 60.0
 
         prompt = config.prompt
         if not prompt and getattr(self, "lora_prompt_hint", ""):
             prompt = self.lora_prompt_hint
 
         logger.info(
-            "Generating %.1fs | prompt=%r | steps=%d | guidance=%.1f | ref_strength=%.2f",
+            "Generating %.1fs | anchor=%s | prompt=%r | steps=%d | guidance=%.1f | ref_strength=%.2f",
             duration,
+            "yes" if use_anchor else "no (pure text+style)",
             prompt,
             config.infer_steps,
             config.guidance_scale,
@@ -140,9 +151,9 @@ class MusicGenerator:
             omega_scale=10.0,
             manual_seeds=str(config.seed) if config.seed is not None else None,
             # audio2audio: the anchor stems steer the structure/rhythm.
-            audio2audio_enable=True,
+            audio2audio_enable=use_anchor,
             ref_audio_strength=config.ref_audio_strength,
-            ref_audio_input=str(anchor_path),
+            ref_audio_input=str(anchor_path) if anchor_path else None,
             save_path=str(output_path),
             format="wav",
         )
@@ -164,7 +175,8 @@ def run_generation(
     device: str = "cuda",
 ) -> Path:
     """High-level entry point used by the CLI `generate` command."""
-    stem_paths = resolve_paths(stems)
+    # Stems are optional: with none, generation is pure text+style+LoRA.
+    stem_paths = resolve_paths(stems) if stems else []
 
     # The learned CLAP style embedding lives in the prompt path, so references
     # contribute even when a LoRA is loaded (the two compose).

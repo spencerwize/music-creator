@@ -40,9 +40,11 @@ music-gen/
   stems/          # drop your anchor stems here
 ```
 
+> **New here?** See [QUICKSTART.md](QUICKSTART.md) for a step-by-step RunPod walkthrough.
+
 ## Setup
 
-Designed for a fresh **RunPod PyTorch** box with a CUDA GPU (A100 recommended):
+Designed for a fresh **RunPod PyTorch** box with a CUDA GPU (RTX 6000 Ada / A6000 / A100):
 
 ```bash
 bash setup.sh

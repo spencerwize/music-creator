@@ -139,8 +139,13 @@ def main(argv: list[str] | None = None) -> int:
         stems = args.stems
         references = args.references
         if args.group:
+            # Stems are optional, so a missing stems/<group>/ folder is fine —
+            # generation just falls back to pure text+style.
             if stems is None:
-                stems = [str(p) for p in collect_group(STEMS_DIR, args.group)]
+                try:
+                    stems = [str(p) for p in collect_group(STEMS_DIR, args.group)]
+                except FileNotFoundError:
+                    stems = []
             if references is None:
                 # References compose with a LoRA, so collect them either way.
                 # In LoRA mode a reference folder is optional, so don't error
@@ -151,12 +156,8 @@ def main(argv: list[str] | None = None) -> int:
                     if not args.lora:
                         raise
 
-        if not stems:
-            print(
-                "error: provide --stems or --group to supply anchor stems.",
-                file=sys.stderr,
-            )
-            return 2
+        # Stems are optional; style source is not. Without stems, ACE-Step does
+        # a pure text+style generation rather than building around an anchor.
         if not references and not args.lora:
             print(
                 "error: provide --references, --group, and/or --lora to define the target style.",
