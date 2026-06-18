@@ -91,6 +91,46 @@ def _attach_lora(transformer, cfg: FinetuneConfig):
     return peft_model
 
 
+def _build_conditioning(pipeline, prompt: str, device: str, dtype) -> dict:
+    """Build the constant (per-batch-of-1) conditioning the transformer needs.
+
+    Mirrors how the inference pipeline prepares inputs: the style prompt as
+    text/genre conditioning, zero speaker embeds, and a minimal instrumental
+    lyric token sequence. These are expanded to the batch size each step.
+    """
+    text_hidden, text_mask = pipeline.get_text_embeddings([prompt or "music"])
+    text_hidden = text_hidden.to(device=device, dtype=dtype)
+    text_mask = text_mask.to(device)
+
+    speaker_embeds = torch.zeros(1, 512, device=device, dtype=dtype)
+
+    # Minimal "instrumental" lyric tokens: [start, end] if tokenisation fails.
+    try:
+        idx = pipeline.tokenize_lyrics("[instrumental]")
+    except Exception:  # pragma: no cover - depends on tokenizer runtime
+        idx = [261, 2]
+    lyric_token_idx = torch.tensor([idx], dtype=torch.long, device=device)
+    lyric_mask = torch.ones(1, len(idx), dtype=torch.long, device=device)
+
+    return {
+        "encoder_text_hidden_states": text_hidden,
+        "text_attention_mask": text_mask,
+        "speaker_embeds": speaker_embeds,
+        "lyric_token_idx": lyric_token_idx,
+        "lyric_mask": lyric_mask,
+    }
+
+
+def _expand_conditioning(base: dict, bsz: int) -> dict:
+    """Repeat the batch-of-1 conditioning tensors to the actual batch size."""
+    if bsz == 1:
+        return base
+    return {
+        k: v.repeat(bsz, *([1] * (v.dim() - 1))) if v.shape[0] == 1 else v
+        for k, v in base.items()
+    }
+
+
 def run_finetune(
     references: list[str],
     name: str,
@@ -153,6 +193,10 @@ def run_finetune(
     style_prompt = style.as_prompt_fragment()
     style.save_vector(out_dir / "style_embedding.pt")
 
+    # Constant conditioning tied to the references' style prompt — the LoRA
+    # learns to denoise the reference latents under this conditioning.
+    base_cond = _build_conditioning(pipeline, style_prompt, device, model_dtype)
+
     logger.info("Starting LoRA training: %d epochs, %d segments/epoch", epochs, len(dataset))
     global_step = 0
     for epoch in range(1, epochs + 1):
@@ -174,11 +218,22 @@ def run_finetune(
             noisy = (1 - t_exp) * latents + t_exp * noise
             target = noise - latents  # flow-matching velocity target
 
-            pred = peft_model(
-                hidden_states=noisy,
-                timestep=t,
+            bsz = latents.shape[0]
+            cond = _expand_conditioning(base_cond, bsz)
+            # Frame-level attention mask over the latent's temporal dimension.
+            latent_mask = torch.ones(
+                bsz, latents.shape[-1], device=device, dtype=model_dtype
             )
-            pred = pred[0] if isinstance(pred, (tuple, list)) else pred
+
+            out = peft_model(
+                hidden_states=noisy,
+                attention_mask=latent_mask,
+                timestep=t,
+                **cond,
+            )
+            pred = getattr(out, "sample", None)
+            if pred is None:
+                pred = out[0] if isinstance(out, (tuple, list)) else out
 
             loss = F.mse_loss(pred.float(), target.float())
             (loss / cfg.grad_accum).backward()
