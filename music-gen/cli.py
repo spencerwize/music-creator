@@ -124,6 +124,55 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Length of audio segments cropped per training step.",
     )
 
+    # -- remix -------------------------------------------------------------- #
+    r = sub.add_parser(
+        "remix",
+        help="Re-tempo an acapella and lay it over a freshly generated, in-style instrumental.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    r.add_argument("--vocal", required=True, help="Acapella / vocal stem to preserve.")
+    r.add_argument(
+        "--group",
+        default=None,
+        help="Project name. Auto-collects style references from references/<group>/.",
+    )
+    r.add_argument(
+        "--references",
+        nargs="+",
+        default=None,
+        help="Style-reference remix(es) defining the target sound.",
+    )
+    r.add_argument("--lora", default=None, help="Saved LoRA adapter for high style fidelity.")
+    r.add_argument("--prompt", default="", help="Optional text prompt for the instrumental.")
+    r.add_argument("--output", default="outputs/remix.wav", help="Output audio path.")
+    r.add_argument(
+        "--source-bpm",
+        type=float,
+        default=0.0,
+        help="Original tempo of the vocal. Auto-estimated if omitted.",
+    )
+    r.add_argument(
+        "--target-bpm",
+        type=float,
+        default=0.0,
+        help="Target tempo for the remix. The vocal is stretched to match.",
+    )
+    r.add_argument(
+        "--pitch-shift",
+        type=float,
+        default=0.0,
+        help="Shift the vocal by N semitones (for key matching). 0 = no change.",
+    )
+    r.add_argument(
+        "--vocal-gain",
+        type=float,
+        default=0.0,
+        help="Vocal level relative to the instrumental, in dB.",
+    )
+    r.add_argument("--infer-steps", type=int, default=60, help="Diffusion steps.")
+    r.add_argument("--guidance-scale", type=float, default=15.0, help="CFG guidance scale.")
+    r.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility.")
+
     return parser
 
 
@@ -214,6 +263,41 @@ def main(argv: list[str] | None = None) -> int:
             device=device,
         )
         print(f"\n✓ LoRA saved: {out}")
+        return 0
+
+    if args.command == "remix":
+        references = args.references
+        if args.group and references is None:
+            try:
+                references = [str(p) for p in collect_group(REFERENCES_DIR, args.group)]
+            except FileNotFoundError:
+                if not args.lora:
+                    raise
+        if not references and not args.lora:
+            print(
+                "error: provide --references, --group, and/or --lora to define the remix style.",
+                file=sys.stderr,
+            )
+            return 2
+
+        from remix import run_remix
+
+        out = run_remix(
+            vocal=args.vocal,
+            references=references,
+            lora=args.lora,
+            prompt=args.prompt,
+            output=args.output,
+            source_bpm=args.source_bpm,
+            target_bpm=args.target_bpm,
+            pitch_shift_semitones=args.pitch_shift,
+            vocal_gain_db=args.vocal_gain,
+            infer_steps=args.infer_steps,
+            guidance_scale=args.guidance_scale,
+            seed=args.seed,
+            device=device,
+        )
+        print(f"\n✓ Remix saved: {out}")
         return 0
 
     return 1

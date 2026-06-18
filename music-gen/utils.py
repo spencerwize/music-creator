@@ -196,3 +196,87 @@ def unique_path(path: str | os.PathLike) -> Path:
         if not candidate.exists():
             return candidate
         i += 1
+
+
+# --------------------------------------------------------------------------- #
+# DSP: time-stretch / pitch-shift / mixing (for the remix command)
+# --------------------------------------------------------------------------- #
+def db_to_gain(db: float) -> float:
+    """Convert decibels to a linear amplitude factor."""
+    return float(10.0 ** (db / 20.0))
+
+
+def time_stretch(waveform: torch.Tensor, rate: float) -> torch.Tensor:
+    """Pitch-preserving time-stretch of a (channels, samples) waveform.
+
+    `rate` > 1 speeds the audio up (shorter); < 1 slows it down (longer). Pitch
+    is preserved (phase-vocoder), so a vocal keeps its key while changing tempo.
+    To retarget tempo, use rate = target_bpm / source_bpm.
+    """
+    if abs(rate - 1.0) < 1e-4:
+        return waveform
+    import librosa
+    import numpy as np
+
+    channels = []
+    for ch in waveform:
+        stretched = librosa.effects.time_stretch(
+            ch.detach().cpu().numpy().astype(np.float32), rate=rate
+        )
+        channels.append(torch.from_numpy(stretched))
+    min_len = min(c.shape[0] for c in channels)
+    return torch.stack([c[:min_len] for c in channels], dim=0)
+
+
+def pitch_shift(waveform: torch.Tensor, sample_rate: int, n_steps: float) -> torch.Tensor:
+    """Shift pitch by `n_steps` semitones without changing length/tempo."""
+    if abs(n_steps) < 1e-4:
+        return waveform
+    import librosa
+    import numpy as np
+
+    channels = []
+    for ch in waveform:
+        shifted = librosa.effects.pitch_shift(
+            ch.detach().cpu().numpy().astype(np.float32),
+            sr=sample_rate,
+            n_steps=n_steps,
+        )
+        channels.append(torch.from_numpy(shifted))
+    return torch.stack(channels, dim=0)
+
+
+def _match_channels(wav: torch.Tensor, channels: int) -> torch.Tensor:
+    """Up/down-mix a (C, N) waveform to `channels` channels."""
+    if wav.shape[0] == channels:
+        return wav
+    if wav.shape[0] == 1:
+        return wav.repeat(channels, 1)
+    if channels == 1:
+        return wav.mean(0, keepdim=True)
+    return wav[:1].repeat(channels, 1)
+
+
+def mix_overlay(
+    base: torch.Tensor,
+    overlay: torch.Tensor,
+    overlay_gain_db: float = 0.0,
+) -> torch.Tensor:
+    """Sum `overlay` (e.g. a vocal) on top of `base` (e.g. an instrumental).
+
+    Channels are reconciled, lengths padded to the longest, the overlay scaled
+    by `overlay_gain_db`, and the result peak-limited to avoid clipping.
+    """
+    channels = max(base.shape[0], overlay.shape[0])
+    base = _match_channels(base, channels)
+    overlay = _match_channels(overlay, channels) * db_to_gain(overlay_gain_db)
+
+    length = max(base.shape[1], overlay.shape[1])
+    mixed = torch.zeros(channels, length)
+    mixed[:, : base.shape[1]] += base
+    mixed[:, : overlay.shape[1]] += overlay
+
+    peak = mixed.abs().max()
+    if peak > 1.0:
+        mixed = mixed / peak
+    return mixed

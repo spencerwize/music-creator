@@ -111,6 +111,33 @@ python cli.py generate \
   --output outputs/result.wav
 ```
 
+### Remix — re-tempo an acapella into a new style
+
+Keeps your real vocal (never resynthesised) but **time-stretches** it from its
+source BPM to a target BPM — pitch-preserved, so a pop acapella locks to an EDM
+grid while staying in key — then generates an in-style instrumental at the
+target tempo and mixes the vocal on top.
+
+```bash
+python cli.py remix \
+  --vocal stems/songA_vocal.wav \
+  --lora loras/edm_style \
+  --prompt "future bass" \
+  --source-bpm 100 --target-bpm 128 \
+  --pitch-shift 2 \
+  --vocal-gain -2 \
+  --output outputs/songA_remix.wav
+```
+
+- `--source-bpm` / `--target-bpm` — the vocal is stretched by `target/source`.
+  Omit `--source-bpm` to auto-estimate it.
+- `--pitch-shift` — semitones, for matching the instrumental's key (optional).
+- `--vocal-gain` — vocal level vs. instrumental, in dB.
+- Style comes from `--lora`, `--references`, or `--group` (same as `generate`).
+
+Tempo-locks and styles well; perfect bar-by-bar arrangement (drops on the hook)
+still needs a DAW pass.
+
 ## Useful flags
 
 | Flag | Applies to | Meaning |
