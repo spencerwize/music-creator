@@ -121,6 +121,10 @@ def run_finetune(
         dtype="bfloat16" if device == "cuda" else "float32",
         torch_compile=False,
     )
+    # ACE-Step loads its sub-models lazily (only on the first __call__), so
+    # force the checkpoint load before we reach into the transformer / DCAE.
+    if not getattr(pipeline, "loaded", False):
+        pipeline.load_checkpoint(pipeline.checkpoint_dir)
 
     transformer = pipeline.ace_step_transformer
     transformer.requires_grad_(False)

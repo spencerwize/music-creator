@@ -66,6 +66,10 @@ class MusicGenerator:
             dtype="bfloat16" if device == "cuda" else "float32",
             torch_compile=False,
         )
+        # ACE-Step loads its sub-models lazily on first __call__. Force the
+        # load now so load_lora() can reach the transformer before generation.
+        if not getattr(self.pipeline, "loaded", False):
+            self.pipeline.load_checkpoint(self.pipeline.checkpoint_dir)
         self._loaded_lora: Optional[str] = None
 
     # -- LoRA management ---------------------------------------------------- #
