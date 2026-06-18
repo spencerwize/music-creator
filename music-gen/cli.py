@@ -164,6 +164,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Shift the vocal by N semitones (for key matching). 0 = no change.",
     )
     r.add_argument(
+        "--match-key",
+        action="store_true",
+        help="Auto-detect the generated instrumental's key and shift the vocal "
+        "to match it (overridden by an explicit --pitch-shift).",
+    )
+    r.add_argument(
         "--vocal-gain",
         type=float,
         default=0.0,
@@ -291,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
             source_bpm=args.source_bpm,
             target_bpm=args.target_bpm,
             pitch_shift_semitones=args.pitch_shift,
+            match_key=args.match_key,
             vocal_gain_db=args.vocal_gain,
             infer_steps=args.infer_steps,
             guidance_scale=args.guidance_scale,

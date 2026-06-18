@@ -133,6 +133,50 @@ def estimate_tempo(waveform: torch.Tensor, sample_rate: int) -> float:
     return float(60.0 * fps / lag) if lag else 0.0
 
 
+# Krumhansl-Kessler key profiles for major/minor key detection.
+_KK_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+_KK_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+_PITCH_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def detect_key(waveform: torch.Tensor, sample_rate: int) -> tuple[int, str, str]:
+    """Estimate musical key via Krumhansl-Schmuckler profile correlation.
+
+    Returns (tonic_pitch_class 0-11 where 0=C, mode "major"/"minor", name).
+    Falls back to (0, "major", "C major") if librosa is unavailable.
+    """
+    try:
+        import librosa
+        import numpy as np
+    except Exception:  # pragma: no cover
+        logger.warning("librosa unavailable; cannot detect key.")
+        return 0, "major", "C major"
+
+    mono = waveform.mean(0).detach().cpu().numpy()
+    chroma = librosa.feature.chroma_cqt(y=mono, sr=sample_rate)
+    chroma_mean = chroma.mean(axis=1)
+
+    best = None
+    for mode, profile in (("major", _KK_MAJOR), ("minor", _KK_MINOR)):
+        prof = np.asarray(profile)
+        for tonic in range(12):
+            rotated = np.roll(prof, tonic)
+            corr = float(np.corrcoef(chroma_mean, rotated)[0, 1])
+            if best is None or corr > best[0]:
+                best = (corr, tonic, mode)
+
+    _, tonic, mode = best
+    return tonic, mode, f"{_PITCH_NAMES[tonic]} {mode}"
+
+
+def semitone_shift(from_pc: int, to_pc: int) -> int:
+    """Minimal signed semitone shift to move pitch class `from_pc` to `to_pc`."""
+    diff = (to_pc - from_pc) % 12
+    if diff > 6:
+        diff -= 12
+    return diff
+
+
 class StyleEncoder:
     """Wraps CLAP to embed audio and score it against the tag vocabulary."""
 

@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from generate import GenerationConfig, MusicGenerator
-from style import estimate_tempo, extract_style
+from style import detect_key, estimate_tempo, extract_style, semitone_shift
 from utils import (
     OUTPUTS_DIR,
     TARGET_SAMPLE_RATE,
@@ -46,6 +46,7 @@ def run_remix(
     source_bpm: float = 0.0,
     target_bpm: float = 0.0,
     pitch_shift_semitones: float = 0.0,
+    match_key: bool = False,
     vocal_gain_db: float = 0.0,
     infer_steps: int = 60,
     guidance_scale: float = 15.0,
@@ -69,7 +70,8 @@ def run_remix(
         target_bpm = source_bpm
         logger.info("No --target-bpm given; keeping the vocal at %.1f BPM", target_bpm)
 
-    # 2. Re-tempo the vocal (pitch-preserving), then optional key shift.
+    # 2. Re-tempo the vocal (pitch-preserving). Key shift happens after the
+    #    instrumental exists, so --match-key can align to the actual generation.
     rate = target_bpm / source_bpm
     if abs(rate - 1.0) > 1e-3:
         logger.info(
@@ -82,9 +84,6 @@ def run_remix(
                 "consider a half/double-time target instead.", rate,
             )
         vocal_wav = time_stretch(vocal_wav, rate)
-    if abs(pitch_shift_semitones) > 1e-3:
-        logger.info("Pitch-shifting vocal %.2f semitones", pitch_shift_semitones)
-        vocal_wav = pitch_shift(vocal_wav, sr, pitch_shift_semitones)
 
     vocal_seconds = vocal_wav.shape[1] / sr
     logger.info("Re-tempo'd vocal length: %.1fs", vocal_seconds)
@@ -117,8 +116,34 @@ def run_remix(
         output_path=OUTPUTS_DIR / "_remix_instrumental.wav",
     )
 
-    # 5. Mix the preserved vocal on top of the instrumental.
     inst_wav, _ = load_audio(inst_path, sample_rate=TARGET_SAMPLE_RATE, mono=False)
+
+    # 5. Key alignment. Explicit --pitch-shift wins; otherwise --match-key
+    #    detects the generated instrumental's key and the vocal's key and
+    #    shifts the vocal by the minimal number of semitones to align them.
+    shift = pitch_shift_semitones
+    if abs(shift) < 1e-3 and match_key:
+        voc_pc, voc_mode, voc_name = detect_key(vocal_wav, sr)
+        inst_pc, inst_mode, inst_name = detect_key(inst_wav, sr)
+        shift = semitone_shift(voc_pc, inst_pc)
+        logger.info(
+            "Key match: vocal %s -> instrumental %s = %+d semitones",
+            voc_name, inst_name, shift,
+        )
+        if voc_mode != inst_mode:
+            logger.warning(
+                "Vocal is %s but instrumental is %s; pitch shift aligns the "
+                "tonic but cannot convert mode — expect some tension.",
+                voc_mode, inst_mode,
+            )
+    elif abs(shift) >= 1e-3 and match_key:
+        logger.info("Explicit --pitch-shift %.2f given; ignoring --match-key.", shift)
+
+    if abs(shift) > 1e-3:
+        logger.info("Pitch-shifting vocal %+.2f semitones", shift)
+        vocal_wav = pitch_shift(vocal_wav, sr, shift)
+
+    # 6. Mix the preserved vocal on top of the instrumental.
     mixed = mix_overlay(inst_wav, vocal_wav, overlay_gain_db=vocal_gain_db)
 
     out_path = save_audio(unique_path(Path(output)), mixed, sr)

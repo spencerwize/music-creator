@@ -124,14 +124,17 @@ python cli.py remix \
   --lora loras/edm_style \
   --prompt "future bass" \
   --source-bpm 100 --target-bpm 128 \
-  --pitch-shift 2 \
+  --match-key \
   --vocal-gain -2 \
   --output outputs/songA_remix.wav
 ```
 
 - `--source-bpm` / `--target-bpm` — the vocal is stretched by `target/source`.
   Omit `--source-bpm` to auto-estimate it.
-- `--pitch-shift` — semitones, for matching the instrumental's key (optional).
+- `--match-key` — auto-detect the generated instrumental's key and shift the
+  vocal by the minimal number of semitones to align (Krumhansl-Schmuckler).
+- `--pitch-shift` — set the semitone shift manually instead (overrides
+  `--match-key`).
 - `--vocal-gain` — vocal level vs. instrumental, in dB.
 - Style comes from `--lora`, `--references`, or `--group` (same as `generate`).
 
