@@ -42,6 +42,31 @@ python cli.py --help
 
 `setup.sh` installs the pinned dependencies and pre-fetches the ACE-Step and Demucs weights.
 
+## Organising material into project groups
+
+Rather than listing every file, you can group material into named project
+folders and reference the whole set with `--group <name>`:
+
+```
+references/jdilla_vibes/song1.mp3
+references/jdilla_vibes/song2.mp3
+stems/jdilla_vibes/my_drums.wav
+stems/jdilla_vibes/my_vocals.wav
+```
+
+```bash
+# Collects all of references/jdilla_vibes/* and stems/jdilla_vibes/*
+python cli.py generate --group jdilla_vibes \
+  --prompt "dusty boom bap" --output outputs/result.wav
+
+# Collects references/jdilla_vibes/* and names the LoRA "jdilla_vibes"
+python cli.py finetune --group jdilla_vibes --epochs 100
+```
+
+Explicit `--references` / `--stems` / `--name` always override the
+auto-collected group. Any audio extension is picked up
+(`.wav .mp3 .flac .m4a .ogg .aiff`).
+
 ## Usage
 
 ### Generate (inference-time style conditioning)

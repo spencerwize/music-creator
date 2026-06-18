@@ -15,7 +15,14 @@ from __future__ import annotations
 import argparse
 import sys
 
-from utils import configure_logging, ensure_dirs, pick_device
+from utils import (
+    REFERENCES_DIR,
+    STEMS_DIR,
+    collect_group,
+    configure_logging,
+    ensure_dirs,
+    pick_device,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -39,9 +46,18 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     g.add_argument(
+        "--group",
+        default=None,
+        help=(
+            "Project name. Auto-collects anchor stems from stems/<group>/ and "
+            "reference songs from references/<group>/. Explicit --stems / "
+            "--references override the auto-collected sets."
+        ),
+    )
+    g.add_argument(
         "--stems",
         nargs="+",
-        required=True,
+        default=None,
         help="Anchor stem audio file(s) the output is built around.",
     )
     g.add_argument(
@@ -79,8 +95,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Train and save a LoRA style adapter on reference songs.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    f.add_argument("--references", nargs="+", required=True, help="Reference song(s) to learn.")
-    f.add_argument("--name", required=True, help="Name for the saved LoRA (loras/<name>).")
+    f.add_argument(
+        "--group",
+        default=None,
+        help=(
+            "Project name. Auto-collects reference songs from references/<group>/ "
+            "and defaults the LoRA --name to the group name."
+        ),
+    )
+    f.add_argument(
+        "--references",
+        nargs="+",
+        default=None,
+        help="Reference song(s) to learn (overrides --group auto-collection).",
+    )
+    f.add_argument(
+        "--name",
+        default=None,
+        help="Name for the saved LoRA (loras/<name>). Defaults to --group.",
+    )
     f.add_argument("--epochs", type=int, default=100, help="Training epochs.")
     f.add_argument("--learning-rate", type=float, default=1e-4, help="AdamW learning rate.")
     f.add_argument("--lora-rank", type=int, default=16, help="LoRA rank (capacity).")
@@ -102,9 +135,24 @@ def main(argv: list[str] | None = None) -> int:
     device = args.device or pick_device()
 
     if args.command == "generate":
-        if not args.references and not args.lora:
+        # Resolve a --group into stem/reference file lists; explicit flags win.
+        stems = args.stems
+        references = args.references
+        if args.group:
+            if stems is None:
+                stems = [str(p) for p in collect_group(STEMS_DIR, args.group)]
+            if references is None and not args.lora:
+                references = [str(p) for p in collect_group(REFERENCES_DIR, args.group)]
+
+        if not stems:
             print(
-                "error: provide --references and/or --lora to define the target style.",
+                "error: provide --stems or --group to supply anchor stems.",
+                file=sys.stderr,
+            )
+            return 2
+        if not references and not args.lora:
+            print(
+                "error: provide --references, --group, and/or --lora to define the target style.",
                 file=sys.stderr,
             )
             return 2
@@ -112,8 +160,8 @@ def main(argv: list[str] | None = None) -> int:
         from generate import run_generation
 
         out = run_generation(
-            stems=args.stems,
-            references=args.references,
+            stems=stems,
+            references=references,
             lora=args.lora,
             prompt=args.prompt,
             output=args.output,
@@ -128,11 +176,29 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "finetune":
+        references = args.references
+        name = args.name or args.group
+        if args.group and references is None:
+            references = [str(p) for p in collect_group(REFERENCES_DIR, args.group)]
+
+        if not references:
+            print(
+                "error: provide --references or --group to supply reference songs.",
+                file=sys.stderr,
+            )
+            return 2
+        if not name:
+            print(
+                "error: provide --name (or --group) to name the saved LoRA.",
+                file=sys.stderr,
+            )
+            return 2
+
         from finetune import run_finetune
 
         out = run_finetune(
-            references=args.references,
-            name=args.name,
+            references=references,
+            name=name,
             epochs=args.epochs,
             learning_rate=args.learning_rate,
             lora_rank=args.lora_rank,

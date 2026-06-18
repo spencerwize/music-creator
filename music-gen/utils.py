@@ -23,6 +23,9 @@ STEMS_DIR = PROJECT_ROOT / "stems"
 # ACE-Step operates at 48 kHz stereo internally.
 TARGET_SAMPLE_RATE = 48_000
 
+# Audio file types we discover when collecting a group folder.
+AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aiff", ".aif"}
+
 
 def configure_logging(verbose: bool = False) -> None:
     """Set up a single, readable log format for the whole CLI."""
@@ -71,6 +74,36 @@ def resolve_paths(paths: Iterable[str | os.PathLike]) -> list[Path]:
             + "\n  - ".join(missing)
         )
     return resolved
+
+
+def collect_group(base_dir: Path, group: str) -> list[Path]:
+    """Return all audio files inside `base_dir/<group>/`, sorted by name.
+
+    Used so a user can organise material into named project folders, e.g.
+    references/jdilla_vibes/*.mp3 and stems/jdilla_vibes/*.wav, and reference
+    the whole set with a single `--group jdilla_vibes` flag.
+
+    The internal references/_separated cache folder is skipped.
+    """
+    group_dir = base_dir / group
+    if not group_dir.is_dir():
+        raise FileNotFoundError(
+            f"Group folder not found: {group_dir}\n"
+            f"Create it and add audio files, e.g. {group_dir / 'song1.mp3'}"
+        )
+    files = sorted(
+        p
+        for p in group_dir.rglob("*")
+        if p.is_file()
+        and p.suffix.lower() in AUDIO_EXTENSIONS
+        and "_separated" not in p.parts
+    )
+    if not files:
+        raise FileNotFoundError(
+            f"No audio files found in {group_dir} "
+            f"(looked for: {', '.join(sorted(AUDIO_EXTENSIONS))})"
+        )
+    return files
 
 
 def load_audio(
