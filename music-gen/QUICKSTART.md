@@ -114,6 +114,20 @@ python cli.py generate --group mysound --lora loras/mysound --seed 42
 | `--lora` only (no stems) | Pure generation in the trained style |
 | nothing (no references, no `--lora`) | **Error** — you must define a target style |
 
+## Troubleshooting
+
+**`ModuleNotFoundError: No module named 'acestep'`**
+ACE-Step isn't on PyPI; it installs from GitHub source. `setup.sh` handles
+this, but if you set up before this was fixed (or it failed), install it
+directly:
+
+```bash
+pip install git+https://github.com/ace-step/ACE-Step.git
+python -c "import acestep; print('ok')"
+```
+
+Then re-run your command.
+
 ## Don't lose your work
 
 Storage can be wiped when a pod stops. Before stopping the pod, either

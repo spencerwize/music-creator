@@ -5,7 +5,9 @@ torch==2.3.1
 torchaudio==2.3.1
 
 # Generation model.
-acestep==0.1.5
+# NOTE: ACE-Step is NOT on PyPI — it installs from GitHub source. setup.sh
+# runs `pip install git+https://github.com/ace-step/ACE-Step.git` after this
+# file so the pinned core stack below resolves first.
 
 # Stem separation.
 demucs==4.0.1

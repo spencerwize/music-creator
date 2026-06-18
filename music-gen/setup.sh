@@ -37,6 +37,13 @@ else
   $PYTHON -m pip install -r requirements.txt
 fi
 
+# ACE-Step is not on PyPI — install it from source. Done after the pinned core
+# stack (so torch/torchaudio are already satisfied and won't be reinstalled);
+# ACE-Step pulls any remaining deps it needs.
+echo "==> Installing ACE-Step from GitHub source"
+$PYTHON -m pip install "git+https://github.com/ace-step/ACE-Step.git"
+$PYTHON -c "import acestep; print('    acestep import OK')"
+
 # --------------------------------------------------------------------------- #
 # 2. Pre-fetch model weights
 # --------------------------------------------------------------------------- #
