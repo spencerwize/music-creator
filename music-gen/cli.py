@@ -149,13 +149,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--source-bpm",
         type=float,
         default=0.0,
-        help="Original tempo of the vocal. Auto-estimated if omitted.",
+        help="Original tempo of the vocal. Auto-detected from the vocal if omitted.",
     )
     r.add_argument(
         "--target-bpm",
         type=float,
         default=0.0,
-        help="Target tempo for the remix. The vocal is stretched to match.",
+        help="Target tempo for the remix (vocal is stretched to match). If "
+        "omitted, auto-detected from the references; otherwise keeps the vocal tempo.",
     )
     r.add_argument(
         "--pitch-shift",

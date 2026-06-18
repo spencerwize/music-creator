@@ -112,7 +112,24 @@ class StyleEmbedding:
 
 
 def estimate_tempo(waveform: torch.Tensor, sample_rate: int) -> float:
-    """Rough onset-autocorrelation tempo estimate (no external deps)."""
+    """Estimate tempo in BPM.
+
+    Prefers librosa's beat tracker (robust on full songs); falls back to a
+    dependency-free onset-autocorrelation estimate if librosa is unavailable.
+    """
+    try:
+        import librosa
+        import numpy as np
+
+        mono = waveform.mean(0).detach().cpu().numpy().astype(np.float32)
+        tempo = librosa.beat.beat_track(y=mono, sr=sample_rate)[0]
+        # Newer librosa returns a length-1 array.
+        tempo = float(np.atleast_1d(tempo)[0])
+        if tempo > 0:
+            return tempo
+    except Exception:  # pragma: no cover - falls through to the estimator below
+        pass
+
     mono = waveform.mean(0)
     win = max(1, sample_rate // 100)
     env = mono.abs().unfold(0, win, win).mean(1)
