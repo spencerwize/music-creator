@@ -27,7 +27,7 @@ from utils import (
     OUTPUTS_DIR,
     TARGET_SAMPLE_RATE,
     load_audio,
-    resolve_paths,
+    resolve_audio_paths,
     save_audio,
     stack_anchor_stems,
     unique_path,
@@ -180,13 +180,13 @@ def run_generation(
 ) -> Path:
     """High-level entry point used by the CLI `generate` command."""
     # Stems are optional: with none, generation is pure text+style+LoRA.
-    stem_paths = resolve_paths(stems) if stems else []
+    stem_paths = resolve_audio_paths(stems) if stems else []
 
     # The learned CLAP style embedding lives in the prompt path, so references
     # contribute even when a LoRA is loaded (the two compose).
     style_fragment = ""
     if references:
-        ref_paths = resolve_paths(references)
+        ref_paths = resolve_audio_paths(references)
         style = extract_style(ref_paths, device=device)
         style_fragment = style.as_prompt_fragment()
 

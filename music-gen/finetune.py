@@ -26,7 +26,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from generate import ACE_STEP_CHECKPOINT
 from style import extract_style
-from utils import LORAS_DIR, TARGET_SAMPLE_RATE, load_audio, resolve_paths
+from utils import LORAS_DIR, TARGET_SAMPLE_RATE, load_audio, resolve_audio_paths
 
 logger = logging.getLogger("music-gen")
 
@@ -143,7 +143,7 @@ def run_finetune(
     """Fine-tune a LoRA adapter and save it to loras/<name>/."""
     from acestep.pipeline_ace_step import ACEStepPipeline
 
-    ref_paths = resolve_paths(references)
+    ref_paths = resolve_audio_paths(references)
     cfg = FinetuneConfig(
         name=name,
         epochs=epochs,

@@ -76,6 +76,17 @@ def resolve_paths(paths: Iterable[str | os.PathLike]) -> list[Path]:
     return resolved
 
 
+def _audio_files_in(directory: Path) -> list[Path]:
+    """Return audio files under `directory`, sorted, skipping the _separated cache."""
+    return sorted(
+        p
+        for p in directory.rglob("*")
+        if p.is_file()
+        and p.suffix.lower() in AUDIO_EXTENSIONS
+        and "_separated" not in p.parts
+    )
+
+
 def collect_group(base_dir: Path, group: str) -> list[Path]:
     """Return all audio files inside `base_dir/<group>/`, sorted by name.
 
@@ -91,19 +102,35 @@ def collect_group(base_dir: Path, group: str) -> list[Path]:
             f"Group folder not found: {group_dir}\n"
             f"Create it and add audio files, e.g. {group_dir / 'song1.mp3'}"
         )
-    files = sorted(
-        p
-        for p in group_dir.rglob("*")
-        if p.is_file()
-        and p.suffix.lower() in AUDIO_EXTENSIONS
-        and "_separated" not in p.parts
-    )
+    files = _audio_files_in(group_dir)
     if not files:
         raise FileNotFoundError(
             f"No audio files found in {group_dir} "
             f"(looked for: {', '.join(sorted(AUDIO_EXTENSIONS))})"
         )
     return files
+
+
+def resolve_audio_paths(paths: Iterable[str | os.PathLike]) -> list[Path]:
+    """Like resolve_paths, but any directory is expanded into its audio files.
+
+    Lets `--references` / `--stems` accept a folder (e.g. references/my_set)
+    as well as individual files.
+    """
+    expanded: list[Path] = []
+    for p in paths:
+        path = Path(p).expanduser()
+        if path.is_dir():
+            found = _audio_files_in(path)
+            if not found:
+                raise FileNotFoundError(
+                    f"No audio files found in directory {path} "
+                    f"(looked for: {', '.join(sorted(AUDIO_EXTENSIONS))})"
+                )
+            expanded.extend(found)
+        else:
+            expanded.append(path)
+    return resolve_paths(expanded)
 
 
 def load_audio(

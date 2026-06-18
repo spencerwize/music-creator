@@ -28,6 +28,7 @@ from utils import (
     load_audio,
     mix_overlay,
     pitch_shift,
+    resolve_audio_paths,
     resolve_paths,
     save_audio,
     time_stretch,
@@ -63,7 +64,7 @@ def run_remix(
     style_fragment = ""
     reference_bpm = 0.0
     if references:
-        style = extract_style(resolve_paths(references), device=device)
+        style = extract_style(resolve_audio_paths(references), device=device)
         style_fragment = style.as_prompt_fragment()
         reference_bpm = style.tempo_bpm
 
