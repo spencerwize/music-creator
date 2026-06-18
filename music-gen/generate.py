@@ -95,9 +95,19 @@ class MusicGenerator:
                 "the fine-tune may not have finished saving."
             )
         logger.info("Loading LoRA adapter: %s", lora_dir)
-        transformer = self.pipeline.ace_step_transformer
-        transformer.load_lora_adapter(str(lora_dir), adapter_name="style")
-        transformer.set_adapters(["style"])
+        # The adapter is saved in PEFT format (adapter_model.safetensors +
+        # adapter_config.json) by finetune.py, so load it with PEFT to stay
+        # symmetric. PeftModel.from_pretrained injects the LoRA layers into the
+        # transformer in place; we keep the wrapper as the pipeline's
+        # transformer (attribute access delegates to the base model).
+        from peft import PeftModel
+
+        base = self.pipeline.ace_step_transformer
+        peft_model = PeftModel.from_pretrained(
+            base, str(lora_dir), adapter_name="style", is_trainable=False
+        )
+        peft_model.eval()
+        self.pipeline.ace_step_transformer = peft_model
         self._loaded_lora = str(lora_dir)
 
         # Pull any prompt hints the LoRA was trained with so generation can
