@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Generated + user audio (keep the dirs, ignore the contents)
+outputs/*
+!outputs/.gitkeep
+references/*
+!references/.gitkeep
+references/_separated/
+stems/*
+!stems/.gitkeep
+
+# Trained adapters can be large; keep the dir, ignore the weights
+loras/*
+!loras/.gitkeep
+
+# Model caches
+.cache/
+*.ckpt
+*.safetensors

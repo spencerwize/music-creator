@@ -1,0 +1,28 @@
+# Core deep-learning stack. On a fresh RunPod PyTorch image torch/torchaudio
+# are usually preinstalled with the correct CUDA build; setup.sh skips them if
+# already present. Pins target a CUDA 12.1 A100 environment.
+torch==2.3.1
+torchaudio==2.3.1
+
+# Generation model.
+acestep==0.1.5
+
+# Stem separation.
+demucs==4.0.1
+
+# Fine-tuning + model plumbing.
+peft==0.11.1
+transformers==4.41.2
+diffusers==0.29.2
+accelerate==0.31.0
+safetensors==0.4.3
+
+# Audio + numerics.
+numpy==1.26.4
+soundfile==0.12.1
+librosa==0.10.2
+einops==0.8.0
+
+# Utilities.
+huggingface-hub==0.23.4
+tqdm==4.66.4
