@@ -10,11 +10,19 @@ Feed it:
 and it produces a full mix that *sounds like the references* but is *structured around your stems*.
 
 Under the hood:
-- **Demucs** (`htdemucs`) separates the references into stems for style analysis.
-- A lightweight **style summary** (tempo, brightness, stem balance) is folded into the prompt.
+- A **learned CLAP style embedding** (`laion/larger_clap_music_and_speech`) is extracted from
+  the references and turned into descriptive prompt tags (genre, mood, texture, instrumentation)
+  via zero-shot audio→text retrieval — real style information, not just tempo/brightness.
+- **Demucs** (`htdemucs`) separates references when you want per-stem analysis.
 - **ACE-Step** (`ACE-Step/ACE-Step-v1-3.5B`) generates the mix, using the anchor stems as
   audio2audio conditioning.
 - Optionally, a **LoRA** fine-tuned on the references gives much higher style fidelity.
+
+The style embedding lives in the **prompt path**, so it composes cleanly with both the anchor
+stems (which own the audio2audio slot) and a LoRA (which owns the weights). That means you can
+run a LoRA *and* references together: the LoRA drives the core sound, the references nudge each
+generation. A fine-tuned LoRA also stores its references' embedding, so generating from a LoRA
+alone still benefits from the learned style even without passing `--references`.
 
 ## Project layout
 
@@ -22,7 +30,8 @@ Under the hood:
 music-gen/
   cli.py          # entry point (generate / finetune)
   separate.py     # Demucs stem separation
-  generate.py     # style extraction + ACE-Step inference
+  style.py        # learned CLAP style embedding + zero-shot tagging
+  generate.py     # style conditioning + ACE-Step inference
   finetune.py     # LoRA fine-tuning on reference songs
   utils.py        # audio I/O, resampling, file management
   outputs/        # generated tracks

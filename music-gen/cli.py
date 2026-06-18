@@ -141,8 +141,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.group:
             if stems is None:
                 stems = [str(p) for p in collect_group(STEMS_DIR, args.group)]
-            if references is None and not args.lora:
-                references = [str(p) for p in collect_group(REFERENCES_DIR, args.group)]
+            if references is None:
+                # References compose with a LoRA, so collect them either way.
+                # In LoRA mode a reference folder is optional, so don't error
+                # if it's absent — the LoRA already carries the style.
+                try:
+                    references = [str(p) for p in collect_group(REFERENCES_DIR, args.group)]
+                except FileNotFoundError:
+                    if not args.lora:
+                        raise
 
         if not stems:
             print(

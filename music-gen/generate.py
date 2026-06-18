@@ -1,28 +1,28 @@
 """ACE-Step inference: turn anchor stems + style references into a full mix.
 
-Two style-conditioning paths are supported:
+Two style-conditioning paths are supported, and they compose:
 
-1. Inference-time conditioning (no training): we separate the reference songs,
-   derive a compact "style summary" from them, fold it into the text prompt,
-   and feed the references to ACE-Step as audio2audio guidance alongside the
-   user's anchor stems.
+1. Inference-time conditioning (no training): we extract a learned CLAP style
+   embedding from the reference songs (see style.py), turn it into prompt-ready
+   descriptors, and fold them into the text prompt. This carries real style
+   information without competing with the anchor stems for the audio2audio slot.
 
 2. LoRA conditioning: a previously fine-tuned adapter (see finetune.py) is
    loaded into the ACE-Step transformer for much higher style fidelity.
+
+Because (1) only touches the prompt and (2) only touches the weights, both can
+be active at once: a LoRA drives the core sound while references nudge each run.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
 
-import torch
-import torchaudio
-
-from separate import separate_references
+from style import extract_style
 from utils import (
     OUTPUTS_DIR,
     TARGET_SAMPLE_RATE,
@@ -36,116 +36,6 @@ from utils import (
 logger = logging.getLogger("music-gen")
 
 ACE_STEP_CHECKPOINT = "ACE-Step/ACE-Step-v1-3.5B"
-
-
-# --------------------------------------------------------------------------- #
-# Style extraction
-# --------------------------------------------------------------------------- #
-@dataclass
-class StyleSummary:
-    """A lightweight, human-readable description of the reference material.
-
-    These are cheap signal-processing descriptors (tempo, brightness, energy
-    balance across stems) rather than a learned embedding. They are folded
-    into the text prompt so the base model leans toward the reference sound
-    even without a LoRA.
-    """
-
-    tempo_bpm: float = 0.0
-    brightness: float = 0.0  # spectral centroid, normalised 0..1
-    stem_energy: dict[str, float] = field(default_factory=dict)
-    descriptors: list[str] = field(default_factory=list)
-
-    def as_prompt_fragment(self) -> str:
-        parts: list[str] = []
-        if self.tempo_bpm:
-            parts.append(f"{round(self.tempo_bpm)} BPM")
-        parts.extend(self.descriptors)
-        return ", ".join(parts)
-
-
-def _estimate_tempo(waveform: torch.Tensor, sample_rate: int) -> float:
-    """Rough onset-autocorrelation tempo estimate (no external deps)."""
-    mono = waveform.mean(0)
-    # Onset envelope via the positive first difference of a coarse envelope.
-    win = max(1, sample_rate // 100)
-    env = mono.abs().unfold(0, win, win).mean(1)
-    env = torch.clamp(env[1:] - env[:-1], min=0.0)
-    if env.numel() < 4:
-        return 0.0
-    env = env - env.mean()
-    ac = torch.nn.functional.conv1d(
-        env.view(1, 1, -1), env.flip(0).view(1, 1, -1), padding=env.numel() - 1
-    ).view(-1)
-    ac = ac[ac.numel() // 2 :]
-    # Frames per second of the onset envelope.
-    fps = sample_rate / win
-    min_lag = int(fps * 60 / 200)  # 200 BPM ceiling
-    max_lag = int(fps * 60 / 60)   # 60 BPM floor
-    if max_lag <= min_lag or max_lag >= ac.numel():
-        return 0.0
-    lag = int(torch.argmax(ac[min_lag:max_lag]).item()) + min_lag
-    return float(60.0 * fps / lag) if lag else 0.0
-
-
-def _spectral_brightness(waveform: torch.Tensor, sample_rate: int) -> float:
-    mono = waveform.mean(0)
-    spec = torch.stft(
-        mono, n_fft=2048, hop_length=512, return_complex=True, window=torch.hann_window(2048)
-    ).abs()
-    freqs = torch.linspace(0, sample_rate / 2, spec.shape[0]).unsqueeze(1)
-    centroid = (spec * freqs).sum() / (spec.sum() + 1e-8)
-    return float((centroid / (sample_rate / 2)).clamp(0, 1).item())
-
-
-def extract_style_summary(
-    references: Iterable[str | Path],
-    device: str = "cuda",
-    skip_separation: bool = False,
-) -> StyleSummary:
-    """Separate references and summarise their style as prompt-ready descriptors."""
-    references = list(references)
-    stem_energy: dict[str, float] = {}
-
-    if not skip_separation:
-        try:
-            separated = separate_references(references, device=device)
-            for stems in separated.values():
-                for name, path in stems.items():
-                    wav, sr = load_audio(path, mono=False)
-                    stem_energy[name] = stem_energy.get(name, 0.0) + float(
-                        wav.pow(2).mean().sqrt().item()
-                    )
-        except Exception as exc:  # pragma: no cover - depends on demucs runtime
-            logger.warning("Stem separation failed (%s); using mix-only style.", exc)
-
-    tempos: list[float] = []
-    brightnesses: list[float] = []
-    for ref in references:
-        wav, sr = load_audio(ref, mono=False)
-        t = _estimate_tempo(wav, sr)
-        if t:
-            tempos.append(t)
-        brightnesses.append(_spectral_brightness(wav, sr))
-
-    tempo = sum(tempos) / len(tempos) if tempos else 0.0
-    brightness = sum(brightnesses) / len(brightnesses) if brightnesses else 0.0
-
-    descriptors: list[str] = []
-    if brightness:
-        descriptors.append("bright and airy" if brightness > 0.45 else "warm and dark")
-    if stem_energy:
-        loudest = max(stem_energy, key=stem_energy.get)
-        descriptors.append(f"{loudest}-forward")
-
-    summary = StyleSummary(
-        tempo_bpm=tempo,
-        brightness=brightness,
-        stem_energy=stem_energy,
-        descriptors=descriptors,
-    )
-    logger.info("Style summary: %s", summary.as_prompt_fragment() or "(none)")
-    return summary
 
 
 # --------------------------------------------------------------------------- #
@@ -276,11 +166,13 @@ def run_generation(
     """High-level entry point used by the CLI `generate` command."""
     stem_paths = resolve_paths(stems)
 
+    # The learned CLAP style embedding lives in the prompt path, so references
+    # contribute even when a LoRA is loaded (the two compose).
     style_fragment = ""
-    if references and not lora:
+    if references:
         ref_paths = resolve_paths(references)
-        summary = extract_style_summary(ref_paths, device=device)
-        style_fragment = summary.as_prompt_fragment()
+        style = extract_style(ref_paths, device=device)
+        style_fragment = style.as_prompt_fragment()
 
     full_prompt = ", ".join(p for p in (prompt, style_fragment) if p).strip(", ")
 

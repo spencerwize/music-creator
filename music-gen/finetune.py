@@ -24,7 +24,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-from generate import ACE_STEP_CHECKPOINT, extract_style_summary
+from generate import ACE_STEP_CHECKPOINT
+from style import extract_style
 from utils import LORAS_DIR, TARGET_SAMPLE_RATE, load_audio, resolve_paths
 
 logger = logging.getLogger("music-gen")
@@ -137,9 +138,12 @@ def run_finetune(
     trainable = [p for p in peft_model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(trainable, lr=cfg.learning_rate)
 
-    # A style summary of the references, stored alongside the adapter so the
-    # generate command can default to a matching prompt.
-    style_prompt = extract_style_summary(ref_paths, device=device).as_prompt_fragment()
+    # The learned CLAP style embedding of the references. Stored alongside the
+    # adapter (vector + prompt fragment) so `generate --lora <name>` defaults to
+    # a matching prompt and a future projector can consume the raw vector.
+    style = extract_style(ref_paths, device=device)
+    style_prompt = style.as_prompt_fragment()
+    style.save_vector(out_dir / "style_embedding.pt")
 
     logger.info("Starting LoRA training: %d epochs, %d segments/epoch", epochs, len(dataset))
     global_step = 0

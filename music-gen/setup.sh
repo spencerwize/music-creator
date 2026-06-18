@@ -57,6 +57,15 @@ get_model("htdemucs")
 print("    Demucs htdemucs weights cached.")
 PY
 
+echo "==> Pre-fetching CLAP style-encoder weights (laion/larger_clap_music_and_speech, ~1.5GB)"
+$PYTHON - <<'PY'
+from transformers import ClapModel, ClapProcessor
+name = "laion/larger_clap_music_and_speech"
+ClapModel.from_pretrained(name)
+ClapProcessor.from_pretrained(name)
+print("    CLAP weights cached.")
+PY
+
 # --------------------------------------------------------------------------- #
 # 3. Working directories
 # --------------------------------------------------------------------------- #
