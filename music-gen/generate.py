@@ -77,7 +77,23 @@ class MusicGenerator:
         """Attach a saved LoRA adapter to the diffusion transformer."""
         lora_dir = Path(lora_dir)
         if not lora_dir.exists():
-            raise FileNotFoundError(f"LoRA not found: {lora_dir}")
+            from utils import LORAS_DIR
+
+            available = sorted(
+                p.name for p in LORAS_DIR.iterdir() if p.is_dir()
+            ) if LORAS_DIR.exists() else []
+            hint = (
+                "Available LoRAs: " + ", ".join(available)
+                if available
+                else f"No LoRAs found in {LORAS_DIR}. Run `finetune` first."
+            )
+            raise FileNotFoundError(f"LoRA not found: {lora_dir}\n{hint}")
+        adapter_file = lora_dir / "adapter_model.safetensors"
+        if not adapter_file.exists():
+            raise FileNotFoundError(
+                f"{lora_dir} exists but has no adapter_model.safetensors — "
+                "the fine-tune may not have finished saving."
+            )
         logger.info("Loading LoRA adapter: %s", lora_dir)
         transformer = self.pipeline.ace_step_transformer
         transformer.load_lora_adapter(str(lora_dir), adapter_name="style")
