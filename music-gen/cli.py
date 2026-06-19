@@ -180,6 +180,46 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--guidance-scale", type=float, default=15.0, help="CFG guidance scale.")
     r.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility.")
 
+    # -- train-operator ----------------------------------------------------- #
+    to = sub.add_parser(
+        "train-operator",
+        help="Train a paired remix operator on references/<style>/{originals,remixes}.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    to.add_argument(
+        "--style",
+        required=True,
+        help="Style folder under references/ holding originals/ and remixes/.",
+    )
+    to.add_argument("--name", required=True, help="Name for the saved operator (loras_op/<name>).")
+    to.add_argument("--epochs", type=int, default=100, help="Training epochs.")
+    to.add_argument("--learning-rate", type=float, default=1e-4, help="AdamW learning rate.")
+    to.add_argument("--lora-rank", type=int, default=16, help="LoRA rank (capacity).")
+    to.add_argument(
+        "--segment-seconds", type=float, default=20.0,
+        help="Length of aligned crops per training step.",
+    )
+    to.add_argument(
+        "--no-match-key", dest="match_key", action="store_false",
+        help="Disable key-matching the original to its remix during alignment.",
+    )
+    to.set_defaults(match_key=True)
+
+    # -- apply-remix -------------------------------------------------------- #
+    ar = sub.add_parser(
+        "apply-remix",
+        help="Apply a trained remix operator to a new original song.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    ar.add_argument("--operator", required=True, help="Path to a trained operator (loras_op/<name>).")
+    ar.add_argument("--original", required=True, help="Original song to remix.")
+    ar.add_argument("--output", default="outputs/remixed.wav", help="Output audio path.")
+    ar.add_argument("--steps", type=int, default=60, help="Sampling steps.")
+    ar.add_argument(
+        "--control-scale", type=float, default=None,
+        help="How strongly the original conditions the remix (default: as trained).",
+    )
+
     return parser
 
 
@@ -303,6 +343,36 @@ def main(argv: list[str] | None = None) -> int:
             infer_steps=args.infer_steps,
             guidance_scale=args.guidance_scale,
             seed=args.seed,
+            device=device,
+        )
+        print(f"\n✓ Remix saved: {out}")
+        return 0
+
+    if args.command == "train-operator":
+        from remix_operator import run_train_operator
+
+        out = run_train_operator(
+            style=args.style,
+            name=args.name,
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            lora_rank=args.lora_rank,
+            segment_seconds=args.segment_seconds,
+            match_key=args.match_key,
+            device=device,
+        )
+        print(f"\n✓ Remix operator saved: {out}")
+        return 0
+
+    if args.command == "apply-remix":
+        from remix_operator import run_apply_remix
+
+        out = run_apply_remix(
+            operator=args.operator,
+            original=args.original,
+            output=args.output,
+            steps=args.steps,
+            control_scale=args.control_scale,
             device=device,
         )
         print(f"\n✓ Remix saved: {out}")

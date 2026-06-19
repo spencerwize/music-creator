@@ -17,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 LORAS_DIR = PROJECT_ROOT / "loras"
+LORAS_OP_DIR = PROJECT_ROOT / "loras_op"
 REFERENCES_DIR = PROJECT_ROOT / "references"
 STEMS_DIR = PROJECT_ROOT / "stems"
 
@@ -38,7 +39,7 @@ def configure_logging(verbose: bool = False) -> None:
 
 def ensure_dirs() -> None:
     """Create the working directories if they do not exist yet."""
-    for d in (OUTPUTS_DIR, LORAS_DIR, REFERENCES_DIR, STEMS_DIR):
+    for d in (OUTPUTS_DIR, LORAS_DIR, LORAS_OP_DIR, REFERENCES_DIR, STEMS_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 
