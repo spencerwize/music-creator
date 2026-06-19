@@ -19,6 +19,7 @@ encoding.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -49,10 +50,33 @@ class Pair:
     remix: Path
 
 
+# Trailing role suffixes stripped before matching, so e.g. songA_original pairs
+# with songA_remix. Separator can be _, -, space, or a dot.
+_ROLE_SUFFIX = re.compile(
+    r"[\s_\-.]+[\(\[]?"
+    r"(originals?|orig|remix(?:es)?|rmx|rework|reedit|edit|flip|bootleg|vip)"
+    r"[\)\]]?$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_stem(stem: str) -> str:
+    """Lowercase and strip trailing role suffixes (repeatedly) for matching."""
+    prev = None
+    s = stem
+    while s != prev:
+        prev = s
+        s = _ROLE_SUFFIX.sub("", s).strip()
+    return s.lower()
+
+
 def discover_pairs(style: str, base_dir: Path = REFERENCES_DIR) -> list[Pair]:
     """Find (original, remix) pairs under references/<style>/{originals,remixes}.
 
-    Pairs are matched by filename stem; the extension may differ between sides.
+    Pairs are matched by a normalised filename stem: common role suffixes like
+    ``_original`` / ``_remix`` (and ``-orig``, `` rmx``, etc.) are stripped
+    first, so ``songA_original.wav`` pairs with ``songA_remix.wav``. Exact same
+    names (``songA.wav`` in both folders) also work. The extension may differ.
     Unmatched files on either side are skipped with a warning.
     """
     style_dir = base_dir / style
@@ -69,7 +93,7 @@ def discover_pairs(style: str, base_dir: Path = REFERENCES_DIR) -> list[Pair]:
         out: dict[str, Path] = {}
         for p in sorted(d.iterdir()):
             if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS:
-                out.setdefault(p.stem, p)
+                out.setdefault(_normalize_stem(p.stem), p)
         return out
 
     originals = index(orig_dir)
@@ -78,7 +102,8 @@ def discover_pairs(style: str, base_dir: Path = REFERENCES_DIR) -> list[Pair]:
     matched = sorted(set(originals) & set(remixes))
     for stem in sorted(set(originals) ^ set(remixes)):
         side = "remix" if stem in originals else "original"
-        logger.warning("Unpaired %s (no matching %s): %s", "file", side, stem)
+        path = (originals if stem in originals else remixes)[stem]
+        logger.warning("Unpaired file (no matching %s): %s", side, path.name)
 
     pairs = [Pair(s, originals[s], remixes[s]) for s in matched]
     if not pairs:

@@ -39,9 +39,11 @@ references/<style>/remixes/     songA.wav  songB.wav  songC.wav
 ```
 
 e.g. `references/lo-fi/originals/` + `references/lo-fi/remixes/`. A pair is
-formed when a basename appears in both folders; unmatched files are skipped with
-a warning. (Extension may differ between the two sides; the stem is what's
-matched.)
+formed when the **normalised** basename matches across folders: trailing role
+suffixes like `_original` / `_remix` (also `-orig`, ` (Remix)`, `[rmx]`, etc.)
+are stripped first, so `songA_original.wav` pairs with `songA_remix.wav`. Exact
+same names (`songA.wav` in both) also work. Extension may differ. Unmatched
+files are skipped with a warning.
 
 ## The crux: how to condition on the original
 
