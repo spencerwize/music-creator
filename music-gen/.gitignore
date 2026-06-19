@@ -17,6 +17,8 @@ stems/*
 # Trained adapters can be large; keep the dir, ignore the weights
 loras/*
 !loras/.gitkeep
+loras_op/*
+!loras_op/.gitkeep
 
 # Model caches
 .cache/
